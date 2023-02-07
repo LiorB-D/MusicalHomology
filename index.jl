@@ -1,85 +1,87 @@
-using FFTW
 using Plots
 using WAV
 using STFT
 using Ripserer
+using PersistenceDiagrams
 
 
-snd, sampFreq = wavread("April.wav")
+function computePD(fileStr, vol)
 
-N, _ = size(snd)
-t = 0:1/(N-1):1;
-rawAmp = snd[:,1]
+    snd, sampFreq = wavread(fileStr)
 
-
-W = Int(sampFreq * 0.05)         # Window length
-w = ones(W)       # Rectangular analysis window
-H = 100            # Hop
-L = W - H         # Overlap
-
-X = stft(rawAmp, w, L)    # Analysis
-s = abs2.(X)         # Compute spectrogram
+    N, _ = size(snd)
+    rawAmp = snd[1440000:2880000,1] / vol # Only consider 30-minute of song
 
 
-#heatmap(s) # Display spectrogram
+    W = Int(sampFreq * 0.03)         # Window length
+    w = ones(W)       # Rectangular analysis window
+    H = 100            # Hop
+    L = W - H         # Overlap
+
+    X = stft(rawAmp, w, L)    # Analysis
+    s = abs2.(X)         # Compute spectrogram
+    println("Fourier Transform complete")
+
+    #heatmap(s) # Display spectrogram
 
 
-rawSoundArray = NTuple{5, Float64}[]
+    rawSoundArray = NTuple{4, Float32}[]
 
-for t=1:length(s[1,:])
-    for b=1:length(s[:,1])
-        if s[b,t] > 500
-            freq = b * sampFreq / W
-            octaveBand = log(2,freq)
-            k = floor(octaveBand)
-            noteRatio = (freq - 2^k) / (2^(k+1) - 2^k)
-            noteX = cos(2pi * noteRatio)
-            noteY = sin(2pi * noteRatio)
-            v = (t, octaveBand, noteX, noteY, s[b,t])
-            push!(rawSoundArray, v)
+    for t=1:length(s[1,:])
+        for b=1:length(s[:,1])
+            if s[b,t] > 13000
+                freq = b * sampFreq / W
+                octaveBand = log(2,freq)
+                k = floor(octaveBand)
+                noteRatio = (freq - 2^k) / (2^(k+1) - 2^k)
+                noteX = cos(2pi * noteRatio)
+                noteY = sin(2pi * noteRatio)
+                v = (t, noteX, noteY, s[b,t] / 1000)
+                push!(rawSoundArray, v)
+            end
         end
     end
+    println("Sound Array Assembled")
+
+    rips = ripserer(rawSoundArray, dim_max = 2, threshold = 3, verbose=true)
+    println("Persistence Calculated")
+    println(rips)
+    for d=1:3
+        for h=1:length(rips[d])
+            if rips[d][h][2] == Inf
+                rips[d][h] = PersistenceInterval(rips[d][h][1], 3)
+            end
+        end
+    end
+
+    return rips
 end
 
-results = ripserer(rawSoundArray)
-
-plot(results)
+april = computePD("April.wav", 1)
+blowin = computePD("blowin.wav", 1.5)
+youMayBe = computePD("YouMayBe.wav", 1.5)
+judas = computePD("Judas.wav", 1)
+bleecker = computePD("bleecker.wav", 1)
+println("April to blowin")
+Bottleneck()(april,blowin)
+println("April to You May Be")
+Bottleneck()(april,youMayBe)
+println("April to Judas") 
+Bottleneck()(april, judas) 
+println("April to bleecker") 
+Bottleneck()(april, bleecker) 
+println("blowin to You May Be")
+Bottleneck()(blowin,youMayBe)
+println("blowin to Judas") 
+Bottleneck()(blowin, judas) 
+println("blowin to bleecker") 
+Bottleneck()(blowin, bleecker) 
+println("You May be to Judas") 
+Bottleneck()(youMayBe, judas) 
+println("You May be to bleecker") 
+Bottleneck()(youMayBe, bleecker) 
+println("Judas to bleecker") 
+Bottleneck()(Judas, bleecker) 
 
 # Frequency of Nth bin - n * sampFreq / window length
 
-#=
-y = fft(s)
-
-y1 = copy(y)
-for i = 1:N
-    if abs(y1[i]) > 200
-        y1[i] = 0
-    end
-end
-
-s_new = real(ifft(y1))
-wavwrite(s_new, "output1.wav", Fs = sampFreq)
-
-y2 = copy(y)
-for i = 1:N
-    if abs(y2[i]) <  800
-        y2[i] = 0
-    end
-end
-
-s_new = real(ifft(y2))
-wavwrite(s_new, "output2.wav", Fs = sampFreq)
-
-sticks((abs.(y1)))
-sticks!((abs.(y2)))
-
-s1,k1 = wavread("output1.wav")
-s2,k2 = wavread("output2.wav")
-
-for i = 1:N
-    s1[i] += s2[i]
-end
-
-wavwrite(s1, "output3.wav", Fs = sampFreq)
-
-=#
