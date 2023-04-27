@@ -3,14 +3,18 @@ using WAV
 using STFT
 using Ripserer
 using PersistenceDiagrams
+using Clustering
+using Distances
 
 
-function computePD(fileStr, vol)
 
+function computePD(fileStr)
+    
     snd, sampFreq = wavread(fileStr)
 
     N, _ = size(snd)
-    rawAmp = snd[1440000:2880000,1] / vol # Only consider 30-minute of song
+    
+    rawAmp = snd[1440000:2880000,1] # Only consider 30-second of song
 
 
     W = Int(sampFreq * 0.03)         # Window length
@@ -23,27 +27,44 @@ function computePD(fileStr, vol)
     println("Fourier Transform complete")
 
     #heatmap(s) # Display spectrogram
-
+    maxAmp = maximum(s)
 
     rawSoundArray = NTuple{4, Float32}[]
 
     for t=1:length(s[1,:])
         for b=1:length(s[:,1])
-            if s[b,t] > 13000
+            if s[b,t] / maxAmp > 0.025
                 freq = b * sampFreq / W
                 octaveBand = log(2,freq)
                 k = floor(octaveBand)
                 noteRatio = (freq - 2^k) / (2^(k+1) - 2^k)
                 noteX = cos(2pi * noteRatio)
                 noteY = sin(2pi * noteRatio)
-                v = (t, noteX, noteY, s[b,t] / 1000)
+                normalizedTime = 5 * t / length(s[1,:])
+                v = (normalizedTime, noteX, noteY, s[b,t] / 1000)
                 push!(rawSoundArray, v)
             end
         end
     end
     println("Sound Array Assembled")
+    
+    rawAmp = 0
+    w = 0
+    X = 0
+    s = 0
 
-    rips = ripserer(rawSoundArray, dim_max = 2, threshold = 3, verbose=true)
+    DissMatrix = pairwise(Euclidean(), rawSoundArray)
+
+    R = kmedoids(DissMatrix, 250)
+    DissMatrix = 0
+    println("Medoids Formed")
+    rawSoundArray = rawSoundArray[R.medoids]
+    R = 0
+    
+
+
+
+    rips = ripserer(rawSoundArray, dim_max = 2, threshold = 1, verbose=true)
     println("Persistence Calculated")
     println(rips)
     for d=1:3
@@ -57,31 +78,31 @@ function computePD(fileStr, vol)
     return rips
 end
 
-april = computePD("April.wav", 1)
-blowin = computePD("blowin.wav", 1.5)
-youMayBe = computePD("YouMayBe.wav", 1.5)
-judas = computePD("Judas.wav", 1)
-bleecker = computePD("bleecker.wav", 1)
+@time april = computePD("April.wav")
+@time blowin = computePD("blowin.wav")
+@time youMayBe = computePD("YouMayBe.wav")
+@time judas = computePD("Judas.wav")
+@time bleecker = computePD("bleecker.wav")
 println("April to blowin")
-Bottleneck()(april,blowin)
+Wasserstein()(april,blowin)
 println("April to You May Be")
-Bottleneck()(april,youMayBe)
+Wasserstein()(april,youMayBe)
 println("April to Judas") 
-Bottleneck()(april, judas) 
+Wasserstein()(april, judas) 
 println("April to bleecker") 
-Bottleneck()(april, bleecker) 
+Wasserstein()(april, bleecker) 
 println("blowin to You May Be")
-Bottleneck()(blowin,youMayBe)
+Wasserstein()(blowin,youMayBe)
 println("blowin to Judas") 
-Bottleneck()(blowin, judas) 
+Wasserstein()(blowin, judas) 
 println("blowin to bleecker") 
-Bottleneck()(blowin, bleecker) 
+Wasserstein()(blowin, bleecker) 
 println("You May be to Judas") 
-Bottleneck()(youMayBe, judas) 
+Wasserstein()(youMayBe, judas) 
 println("You May be to bleecker") 
-Bottleneck()(youMayBe, bleecker) 
+Wasserstein()(youMayBe, bleecker) 
 println("Judas to bleecker") 
-Bottleneck()(Judas, bleecker) 
+Wasserstein()(judas, bleecker) 
 
 # Frequency of Nth bin - n * sampFreq / window length
 
